@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="INTERVAL">
+<meta name="theme-color" content="#0a0a0a">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.svg">
+<title>INTERVAL</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0a0a0a;
+    --fg: #f0ede6;
+    --accent: #e84a2e;
+    --dim: #2a2a2a;
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--fg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+  }
+
+  .container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    padding: 40px 20px;
+  }
+
+  .label {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 14px;
+    letter-spacing: 0.4em;
+    color: var(--accent);
+    margin-bottom: 16px;
+    opacity: 0.85;
+  }
+
+  .selector {
+    display: flex;
+    margin-bottom: 32px;
+  }
+
+  .sel-btn {
+    width: 90px;
+    height: 36px;
+    background: transparent;
+    border: 1px solid var(--dim);
+    color: #555;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 20px;
+    letter-spacing: 0.15em;
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+    -webkit-appearance: none;
+  }
+
+  .sel-btn:first-child { border-right: none; }
+
+  .sel-btn.active {
+    background: var(--dim);
+    color: var(--fg);
+    border-color: #444;
+  }
+
+  .sel-btn.locked {
+    pointer-events: none;
+    opacity: 0.25;
+  }
+
+  .time-display {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(130px, 32vw, 220px);
+    line-height: 0.88;
+    letter-spacing: -0.02em;
+    color: var(--fg);
+    text-align: center;
+    transition: color 0.2s;
+  }
+
+  .time-display.alert {
+    color: var(--accent);
+    animation: pulse 0.4s ease-in-out infinite alternate;
+  }
+
+  @keyframes pulse {
+    from { opacity: 1; }
+    to { opacity: 0.3; }
+  }
+
+  .progress-bar {
+    width: 100%;
+    max-width: 320px;
+    height: 2px;
+    background: var(--dim);
+    margin: 28px 0 36px;
+  }
+
+  .progress-fill {
+    height: 100%;
+    width: 100%;
+    background: var(--accent);
+    transition: width 0.1s linear;
+  }
+
+  .btn-main {
+    width: 100%;
+    max-width: 320px;
+    height: 80px;
+    border: none;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 32px;
+    letter-spacing: 0.25em;
+    cursor: pointer;
+    -webkit-appearance: none;
+    transition: background 0.15s, transform 0.08s;
+  }
+
+  .btn-main.start {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  .btn-main.reset {
+    background: #1c1c1c;
+    border: 1px solid #333;
+    color: #888;
+    font-size: 26px;
+  }
+
+  .btn-main:active { transform: scale(0.97); }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="label">INTERVAL</div>
+
+  <div class="selector" id="selector">
+    <button class="sel-btn active" id="btn60" onclick="selectDuration(60)">60s</button>
+    <button class="sel-btn" id="btn90" onclick="selectDuration(90)">90s</button>
+  </div>
+
+  <div class="time-display" id="timeDisplay">60</div>
+
+  <div class="progress-bar">
+    <div class="progress-fill" id="progressFill"></div>
+  </div>
+
+  <button class="btn-main start" id="btnMain" onclick="handleBtn()">START</button>
+</div>
+
+<script>
+  // Service Worker登録
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js');
+  }
+
+  let duration = 60;
+  let remaining = 60;
+  let startTime = null;
+  let rafId = null;
+  let running = false;
+
+  const timeDisplay = document.getElementById('timeDisplay');
+  const progressFill = document.getElementById('progressFill');
+  const btnMain = document.getElementById('btnMain');
+  const selector = document.getElementById('selector');
+
+  function selectDuration(sec) {
+    if (running) return;
+    duration = sec;
+    remaining = sec;
+    document.getElementById('btn60').classList.toggle('active', sec === 60);
+    document.getElementById('btn90').classList.toggle('active', sec === 90);
+    render(sec);
+  }
+
+  function render(sec) {
+    timeDisplay.textContent = Math.ceil(sec);
+    progressFill.style.width = (sec / duration * 100) + '%';
+    if (sec <= 10 && sec > 0) {
+      timeDisplay.classList.add('alert');
+    } else {
+      timeDisplay.classList.remove('alert');
+    }
+  }
+
+  function handleBtn() {
+    if (!running) {
+      running = true;
+      startTime = Date.now() - (duration - remaining) * 1000;
+      rafId = requestAnimationFrame(tick);
+      btnMain.textContent = 'RESET';
+      btnMain.classList.replace('start', 'reset');
+      selector.querySelectorAll('.sel-btn').forEach(b => b.classList.add('locked'));
+    } else {
+      reset();
+    }
+  }
+
+  function tick() {
+    const elapsed = (Date.now() - startTime) / 1000;
+    remaining = Math.max(duration - elapsed, 0);
+    render(remaining);
+    if (remaining <= 0) {
+      if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+      reset();
+      return;
+    }
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function reset() {
+    running = false;
+    cancelAnimationFrame(rafId);
+    remaining = duration;
+    render(duration);
+    btnMain.textContent = 'START';
+    btnMain.classList.replace('reset', 'start');
+    selector.querySelectorAll('.sel-btn').forEach(b => b.classList.remove('locked'));
+    startTime = null;
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.code === 'Space') { e.preventDefault(); handleBtn(); }
+  });
+
+  render(duration);
+</script>
+</body>
+</html>
